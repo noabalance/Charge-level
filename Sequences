@@ -1,0 +1,609 @@
+select 
+c.transaction_public_id AS transaction_public_id, 
+c.EXTERNAL_CHARGE_ID as EXTERNAL_STRIPE_REF,
+CASE 
+    WHEN external_charge_id LIKE 'ch_%' 
+         OR external_charge_id LIKE 'py_%' 
+         OR external_charge_id LIKE 'pi_%' 
+         OR external_charge_id LIKE 'rg_%'
+    THEN 'stripe' 
+when external_charge_id is null then 'outOfPlatform'
+    ELSE 'bank' 
+END AS gateway_ref,
+c.charge_public_id,
+c.charge_amount_usd as charge_amount,
+c.charge_currency,
+c.charge_status,
+c.paid_Date,
+c.is_deleted,
+c.CHARGE_PAYMENT_METHOD_TYPE,
+c.transaction_is_financed,             
+c.created_at AS creation_date_charge,  
+c.paid_date as date_of_payment ,           
+c.buyer_id AS buyer_id,                        
+c.merchant_name AS merchant_name,              
+CASE 
+    WHEN captured_amount != 0 THEN captured_amount
+        ELSE total_price
+             END AS TRANSACTION_AMOUNT,           
+ifnull(t.ADVANCE_RATE_PERCENTAGE,0)/100 AS advance_rate,     
+c.TRANSACTION_IS_FINANCED AS is_financed
+from stg.dim_all_charges c
+LEFT JOIN  dbo.transaction t ON t.public_id = c.transaction_public_id 
+where c.charge_status in ('charged','refunded','disputed','pendingRefund','disputeLost')
+and extract(year from paid_date)=2024
+)
+
+select
+    CONCAT('mbdo_', LEFT(ABS(RANDOM()), 10), RANDSTR(6, RANDOM())) AS RECORD_ID, 
+    current_timestamp AS CREATED_DATE,
+    date_of_payment  AS ACCOUNTING_DATE,
+    0 as PHYSICAL_CASH_CHANGE,
+    0 as IN_TRANSIT,
+    charge_amount*-1 as FACTORING_ACCOUNT_RECEIVABLE,
+    CASE 
+        WHEN advance_rate = 0 THEN 0
+        ELSE charge_amount * (1 - advance_rate) 
+    END AS OTHER_ACCOUNT_PAYABLE,
+
+    CASE 
+        WHEN advance_rate = 0 THEN charge_amount
+        ELSE charge_amount * advance_rate 
+    END AS ACCOUNT_PAYABLE,
+    0 AS PROVISION_FOR_DOUBTFUL_DEBT,
+    0 AS PROFIT_LOSS_FACTORING_REVENUES,
+    0 AS PROFIT_LOSS_PROCESSING_REVENUES,
+    0 AS PROFIT_LOSS_PAYOUT_REVENUES,
+    0 AS DEFERED_REVENUES,
+    0 AS ADJUSTMENTS_REVENUE,
+    0 AS COGS,
+    0 AS DOUBTFUL_DEBT,
+    0 AS CONNECTED_ACCOUNT,
+    buyer_id AS BUYER,
+    '' AS VENDOR,
+    merchant_name AS MERCHANT,
+    TRANSACTION_AMOUNT AS TRANSACTION_AMOUNT,
+    transaction_public_id AS TRANSACTION_PAYOUT_PUBLIC_ID,
+    is_financed AS IS_TRANSACTION_FINANCED,
+    advance_rate AS ADVANCE_RATE_PERCENTAGE,
+    charge_public_id AS CHARGE_ID,
+    '' AS REFUND_ID,
+    '' AS PAYOUT_ID,
+    '' AS EXTERNAL_REF,
+    'Merchant balance decreased - outOfPlatform payment' AS SEQUENCE,
+    15 AS SEQUENCE_ORDER,
+    CURRENT_TIMESTAMP AS ROW_UPDATED_AT,
+    'Noa' AS UPDATED_BY,
+    'Insert new sequence to table' AS REASON
+
+from charge_summary
+WHERE is_deleted is null
+and is_financed=TRUE
+and CHARGE_PAYMENT_METHOD_TYPE  ='outOfPlatform'
+
+      
+
+
+
+select
+    CONCAT('bpfas_', LEFT(ABS(RANDOM()), 10), RANDSTR(6, RANDOM())) AS RECORD_ID, 
+    current_timestamp AS CREATED_DATE,
+    date_of_payment AS ACCOUNTING_DATE,
+    0 AS PHYSICAL_CASH_CHANGE,
+    charge_amount as IN_TRANSIT,
+    charge_amount*-1 as FACTORING_ACCOUNT_RECEIVABLE,
+    0 AS OTHER_ACCOUNT_PAYABLE,
+    0 AS ACCOUNT_PAYABLE,
+    0 AS PROVISION_FOR_DOUBTFUL_DEBT,
+    0 AS PROFIT_LOSS_FACTORING_REVENUES,
+    0 AS PROFIT_LOSS_PROCESSING_REVENUES,
+    0 AS PROFIT_LOSS_PAYOUT_REVENUES,
+    0 AS DEFERED_REVENUES,
+    0 AS ADJUSTMENTS_REVENUE,
+    0 AS COGS,
+    0 AS DOUBTFUL_DEBT,
+    0 AS CONNECTED_ACCOUNT,
+    buyer_id AS BUYER,
+    '' AS VENDOR,
+    merchant_name AS MERCHANT,
+    TRANSACTION_AMOUNT AS TRANSACTION_AMOUNT,
+    transaction_public_id AS TRANSACTION_PAYOUT_PUBLIC_ID,
+    is_financed AS IS_TRANSACTION_FINANCED,
+    advance_rate AS ADVANCE_RATE_PERCENTAGE,
+    charge_public_id AS CHARGE_ID,
+    '' AS REFUND_ID,
+    '' AS PAYOUT_ID,
+    EXTERNAL_STRIPE_REF AS EXTERNAL_REF,
+    'Buyer paid full amount - stripe' AS SEQUENCE,
+    4 AS SEQUENCE_ORDER,
+    CURRENT_TIMESTAMP AS ROW_UPDATED_AT,
+    'Noa' AS UPDATED_BY,
+    'Insert new sequence to table' AS REASON
+
+from charge_summary
+where IS_FINANCED=TRUE
+and gateway_ref='stripe'
+and is_deleted is null
+and CHARGE_PAYMENT_METHOD_TYPE  not in ('check','outOfPlatform')
+and charge_amount>=transaction_amount
+
+
+UNION ALL
+
+select
+    CONCAT('bppas_', LEFT(ABS(RANDOM()), 10), RANDSTR(6, RANDOM())) AS RECORD_ID, 
+    current_timestamp AS CREATED_DATE,
+    date_of_payment AS ACCOUNTING_DATE,
+    0 AS PHYSICAL_CASH_CHANGE,
+    charge_amount as IN_TRANSIT,
+    charge_amount*-1 as FACTORING_ACCOUNT_RECEIVABLE,
+    0 AS OTHER_ACCOUNT_PAYABLE,
+    0 AS ACCOUNT_PAYABLE,
+    0 AS PROVISION_FOR_DOUBTFUL_DEBT,
+    0 AS PROFIT_LOSS_FACTORING_REVENUES,
+    0 AS PROFIT_LOSS_PROCESSING_REVENUES,
+    0 AS PROFIT_LOSS_PAYOUT_REVENUES,
+    0 AS DEFERED_REVENUES,
+    0 AS ADJUSTMENTS_REVENUE,
+    0 AS COGS,
+    0 AS DOUBTFUL_DEBT,
+    0 AS CONNECTED_ACCOUNT,
+    buyer_id AS BUYER,
+    '' AS VENDOR,
+    merchant_name AS MERCHANT,
+    TRANSACTION_AMOUNT AS TRANSACTION_AMOUNT,
+    transaction_public_id AS TRANSACTION_PAYOUT_PUBLIC_ID,
+    is_financed AS IS_TRANSACTION_FINANCED,
+    advance_rate AS ADVANCE_RATE_PERCENTAGE,
+    charge_public_id AS CHARGE_ID,
+    '' AS REFUND_ID,
+    '' AS PAYOUT_ID,
+    EXTERNAL_STRIPE_REF AS EXTERNAL_REF,
+    'Buyer paid partial amount - stripe' AS SEQUENCE,
+    5 AS SEQUENCE_ORDER,
+    CURRENT_TIMESTAMP AS ROW_UPDATED_AT,
+    'Noa' AS UPDATED_BY,
+    'Insert new sequence to table' AS REASON
+
+from charge_summary
+where IS_FINANCED=TRUE
+and gateway_ref='stripe'
+and is_deleted is null
+and CHARGE_PAYMENT_METHOD_TYPE  not in ('check','outOfPlatform')
+and charge_amount<transaction_amount
+
+
+UNION ALL
+
+select
+    CONCAT('bpfab_', LEFT(ABS(RANDOM()), 10), RANDSTR(6, RANDOM())) AS RECORD_ID, 
+    current_timestamp AS CREATED_DATE,
+    date_of_payment AS ACCOUNTING_DATE,
+    0 AS PHYSICAL_CASH_CHANGE,
+    charge_amount as IN_TRANSIT,
+    charge_amount*-1 as FACTORING_ACCOUNT_RECEIVABLE,
+    0 AS OTHER_ACCOUNT_PAYABLE,
+    0 AS ACCOUNT_PAYABLE,
+    0 AS PROVISION_FOR_DOUBTFUL_DEBT,
+    0 AS PROFIT_LOSS_FACTORING_REVENUES,
+    0 AS PROFIT_LOSS_PROCESSING_REVENUES,
+    0 AS PROFIT_LOSS_PAYOUT_REVENUES,
+    0 AS DEFERED_REVENUES,
+    0 AS ADJUSTMENTS_REVENUE,
+    0 AS COGS,
+    0 AS DOUBTFUL_DEBT,
+    0 AS CONNECTED_ACCOUNT,
+    buyer_id AS BUYER,
+    '' AS VENDOR,
+    merchant_name AS MERCHANT,
+    TRANSACTION_AMOUNT AS TRANSACTION_AMOUNT,
+    transaction_public_id AS TRANSACTION_PAYOUT_PUBLIC_ID,
+    is_financed AS IS_TRANSACTION_FINANCED,
+    advance_rate AS ADVANCE_RATE_PERCENTAGE,
+    charge_public_id AS CHARGE_ID,
+    '' AS REFUND_ID,
+    '' AS PAYOUT_ID,
+    EXTERNAL_STRIPE_REF AS EXTERNAL_REF,
+    'Buyer paid full amount - bank' AS SEQUENCE,
+    6 AS SEQUENCE_ORDER,
+    CURRENT_TIMESTAMP AS ROW_UPDATED_AT,
+    'Noa' AS UPDATED_BY,
+    'Insert new sequence to table' AS REASON
+
+from charge_summary
+where IS_FINANCED=TRUE
+and is_deleted is null
+and (CHARGE_PAYMENT_METHOD_TYPE in ('check') or gateway_ref='bank')
+and charge_amount>=transaction_amount
+
+UNION ALL
+
+select
+    CONCAT('bppab_', LEFT(ABS(RANDOM()), 10), RANDSTR(6, RANDOM())) AS RECORD_ID, 
+    current_timestamp AS CREATED_DATE,
+    date_of_payment AS ACCOUNTING_DATE,
+    0 AS PHYSICAL_CASH_CHANGE,
+    charge_amount as IN_TRANSIT,
+    charge_amount*-1 as FACTORING_ACCOUNT_RECEIVABLE,
+    0 AS OTHER_ACCOUNT_PAYABLE,
+    0 AS ACCOUNT_PAYABLE,
+    0 AS PROVISION_FOR_DOUBTFUL_DEBT,
+    0 AS PROFIT_LOSS_FACTORING_REVENUES,
+    0 AS PROFIT_LOSS_PROCESSING_REVENUES,
+    0 AS PROFIT_LOSS_PAYOUT_REVENUES,
+    0 AS DEFERED_REVENUES,
+    0 AS ADJUSTMENTS_REVENUE,
+    0 AS COGS,
+    0 AS DOUBTFUL_DEBT,
+    0 AS CONNECTED_ACCOUNT,
+    buyer_id AS BUYER,
+    '' AS VENDOR,
+    merchant_name AS MERCHANT,
+    TRANSACTION_AMOUNT AS TRANSACTION_AMOUNT,
+    transaction_public_id AS TRANSACTION_PAYOUT_PUBLIC_ID,
+    is_financed AS IS_TRANSACTION_FINANCED,
+    advance_rate AS ADVANCE_RATE_PERCENTAGE,
+    charge_public_id AS CHARGE_ID,
+    '' AS REFUND_ID,
+    '' AS PAYOUT_ID,
+    EXTERNAL_STRIPE_REF AS EXTERNAL_REF,
+    'Buyer paid partial amount - bank' AS SEQUENCE,
+    7 AS SEQUENCE_ORDER,
+    CURRENT_TIMESTAMP AS ROW_UPDATED_AT,
+    'Noa' AS UPDATED_BY,
+    'Insert new sequence to table' AS REASON
+
+from charge_summary
+where IS_FINANCED=TRUE
+and is_deleted is null
+and (CHARGE_PAYMENT_METHOD_TYPE in ('check') or gateway_ref='bank')
+and charge_amount<transaction_amount
+
+UNION ALL
+
+select
+    CONCAT('bppabm_', LEFT(ABS(RANDOM()), 10), RANDSTR(6, RANDOM())) AS RECORD_ID, 
+    current_timestamp AS CREATED_DATE,
+    date_of_payment AS ACCOUNTING_DATE,
+    0 as PHYSICAL_CASH_CHANGE,
+    charge_amount as IN_TRANSIT,
+    0 as FACTORING_ACCOUNT_RECEIVABLE,
+    0 as OTHER_ACCOUNT_PAYABLE,
+    charge_amount*-1 as ACCOUNT_PAYABLE,
+    0 AS PROVISION_FOR_DOUBTFUL_DEBT,
+    0 AS PROFIT_LOSS_FACTORING_REVENUES,
+    0 AS PROFIT_LOSS_PROCESSING_REVENUES,
+    0 AS PROFIT_LOSS_PAYOUT_REVENUES,
+    0 AS DEFERED_REVENUES,
+    0 AS ADJUSTMENTS_REVENUE,
+    0 AS COGS,
+    0 AS DOUBTFUL_DEBT,
+    0 AS CONNECTED_ACCOUNT,
+    buyer_id AS BUYER,
+    '' AS VENDOR,
+    merchant_name AS MERCHANT,
+    TRANSACTION_AMOUNT AS TRANSACTION_AMOUNT,
+    transaction_public_id AS TRANSACTION_PAYOUT_PUBLIC_ID,
+    is_financed AS IS_TRANSACTION_FINANCED,
+    advance_rate AS ADVANCE_RATE_PERCENTAGE,
+    charge_public_id AS CHARGE_ID,
+    '' AS REFUND_ID,
+    '' AS PAYOUT_ID,
+    EXTERNAL_STRIPE_REF AS EXTERNAL_REF,
+    'Buyer paid full amount - stripe - Merchant balance increased' AS SEQUENCE,
+    8 AS SEQUENCE_ORDER,
+    CURRENT_TIMESTAMP AS ROW_UPDATED_AT,
+    'Noa' AS UPDATED_BY,
+    'Insert new sequence to table' AS REASON
+
+from charge_summary
+where IS_FINANCED=FALSE
+and gateway_ref='stripe'
+and is_deleted is null
+and CHARGE_PAYMENT_METHOD_TYPE  not in ('check','outOfPlatform')
+and charge_amount>=transaction_amount
+
+UNION ALL
+
+select
+    CONCAT('bppabm_', LEFT(ABS(RANDOM()), 10), RANDSTR(6, RANDOM())) AS RECORD_ID, 
+    current_timestamp AS CREATED_DATE,
+    date_of_payment AS ACCOUNTING_DATE,
+    0 as PHYSICAL_CASH_CHANGE,
+    charge_amount as IN_TRANSIT,
+    0 as FACTORING_ACCOUNT_RECEIVABLE,
+    0 as OTHER_ACCOUNT_PAYABLE,
+    charge_amount*-1 as ACCOUNT_PAYABLE,
+    0 AS PROVISION_FOR_DOUBTFUL_DEBT,
+    0 AS PROFIT_LOSS_FACTORING_REVENUES,
+    0 AS PROFIT_LOSS_PROCESSING_REVENUES,
+    0 AS PROFIT_LOSS_PAYOUT_REVENUES,
+    0 AS DEFERED_REVENUES,
+    0 AS ADJUSTMENTS_REVENUE,
+    0 AS COGS,
+    0 AS DOUBTFUL_DEBT,
+    0 AS CONNECTED_ACCOUNT,
+    buyer_id AS BUYER,
+    '' AS VENDOR,
+    merchant_name AS MERCHANT,
+    TRANSACTION_AMOUNT AS TRANSACTION_AMOUNT,
+    transaction_public_id AS TRANSACTION_PAYOUT_PUBLIC_ID,
+    is_financed AS IS_TRANSACTION_FINANCED,
+    advance_rate AS ADVANCE_RATE_PERCENTAGE,
+    charge_public_id AS CHARGE_ID,
+    '' AS REFUND_ID,
+    '' AS PAYOUT_ID,
+    EXTERNAL_STRIPE_REF AS EXTERNAL_REF,
+    'Buyer paid partial amount - stripe - Merchant balance increased' AS SEQUENCE,
+    9 AS SEQUENCE_ORDER,
+    CURRENT_TIMESTAMP AS ROW_UPDATED_AT,
+    'Noa' AS UPDATED_BY,
+    'Insert new sequence to table' AS REASON
+
+from charge_summary
+where IS_FINANCED=FALSE
+and gateway_ref='stripe'
+and is_deleted is null
+and CHARGE_PAYMENT_METHOD_TYPE  not in ('check','outOfPlatform')
+and charge_amount<transaction_amount
+
+
+
+UNION ALL
+
+select
+    CONCAT('bpfabm_', LEFT(ABS(RANDOM()), 10), RANDSTR(6, RANDOM())) AS RECORD_ID, 
+    current_timestamp AS CREATED_DATE,
+    date_of_payment AS ACCOUNTING_DATE,
+    0 AS PHYSICAL_CASH_CHANGE,
+    charge_amount as IN_TRANSIT,
+    0 as FACTORING_ACCOUNT_RECEIVABLE,
+    0 AS OTHER_ACCOUNT_PAYABLE,
+    charge_amount*-1 AS ACCOUNT_PAYABLE,
+    0 AS PROVISION_FOR_DOUBTFUL_DEBT,
+    0 AS PROFIT_LOSS_FACTORING_REVENUES,
+    0 AS PROFIT_LOSS_PROCESSING_REVENUES,
+    0 AS PROFIT_LOSS_PAYOUT_REVENUES,
+    0 AS DEFERED_REVENUES,
+    0 AS ADJUSTMENTS_REVENUE,
+    0 AS COGS,
+    0 AS DOUBTFUL_DEBT,
+    0 AS CONNECTED_ACCOUNT,
+    buyer_id AS BUYER,
+    '' AS VENDOR,
+    merchant_name AS MERCHANT,
+    TRANSACTION_AMOUNT AS TRANSACTION_AMOUNT,
+    transaction_public_id AS TRANSACTION_PAYOUT_PUBLIC_ID,
+    is_financed AS IS_TRANSACTION_FINANCED,
+    advance_rate AS ADVANCE_RATE_PERCENTAGE,
+    charge_public_id AS CHARGE_ID,
+    '' AS REFUND_ID,
+    '' AS PAYOUT_ID,
+    EXTERNAL_STRIPE_REF AS EXTERNAL_REF,
+    'Buyer paid full amount - bank - Merchant balance increased' AS SEQUENCE,
+    10 AS SEQUENCE_ORDER,
+    CURRENT_TIMESTAMP AS ROW_UPDATED_AT,
+    'Noa' AS UPDATED_BY,
+    'Insert new sequence to table' AS REASON
+
+from charge_summary
+where IS_FINANCED=FALSE
+and is_deleted is null
+and (CHARGE_PAYMENT_METHOD_TYPE in ('check') or gateway_ref='bank')
+and charge_amount>=transaction_amount
+
+UNION ALL
+
+select
+    CONCAT('bppabm_', LEFT(ABS(RANDOM()), 10), RANDSTR(6, RANDOM())) AS RECORD_ID, 
+    current_timestamp AS CREATED_DATE,
+    date_of_payment AS ACCOUNTING_DATE,
+    0 AS PHYSICAL_CASH_CHANGE,
+    charge_amount as IN_TRANSIT,
+    0 as FACTORING_ACCOUNT_RECEIVABLE,
+    0 AS OTHER_ACCOUNT_PAYABLE,
+    charge_amount*-1 AS ACCOUNT_PAYABLE,
+    0 AS PROVISION_FOR_DOUBTFUL_DEBT,
+    0 AS PROFIT_LOSS_FACTORING_REVENUES,
+    0 AS PROFIT_LOSS_PROCESSING_REVENUES,
+    0 AS PROFIT_LOSS_PAYOUT_REVENUES,
+    0 AS DEFERED_REVENUES,
+    0 AS ADJUSTMENTS_REVENUE,
+    0 AS COGS,
+    0 AS DOUBTFUL_DEBT,
+    0 AS CONNECTED_ACCOUNT,
+    buyer_id AS BUYER,
+    '' AS VENDOR,
+    merchant_name AS MERCHANT,
+    TRANSACTION_AMOUNT AS TRANSACTION_AMOUNT,
+    transaction_public_id AS TRANSACTION_PAYOUT_PUBLIC_ID,
+    is_financed AS IS_TRANSACTION_FINANCED,
+    advance_rate AS ADVANCE_RATE_PERCENTAGE,
+    charge_public_id AS CHARGE_ID,
+    '' AS REFUND_ID,
+    '' AS PAYOUT_ID,
+    EXTERNAL_STRIPE_REF AS EXTERNAL_REF,
+    'Buyer paid partial amount - bank - Merchant balance increased' AS SEQUENCE,
+    11 AS SEQUENCE_ORDER,
+    CURRENT_TIMESTAMP AS ROW_UPDATED_AT,
+    'Noa' AS UPDATED_BY,
+    'Insert new sequence to table' AS REASON
+
+from charge_summary
+where IS_FINANCED=FALSE
+and is_deleted is null
+and (CHARGE_PAYMENT_METHOD_TYPE in ('check') or gateway_ref='bank')
+and charge_amount<transaction_amount
+
+
+UNION ALL
+
+select
+    CONCAT('maib_', LEFT(ABS(RANDOM()), 10), RANDSTR(6, RANDOM())) AS RECORD_ID, 
+    current_timestamp AS CREATED_DATE,
+    date_of_payment AS ACCOUNTING_DATE,
+    charge_amount as PHYSICAL_CASH_CHANGE,
+    charge_amount*-1 as IN_TRANSIT,
+    0 as FACTORING_ACCOUNT_RECEIVABLE,
+    0 AS OTHER_ACCOUNT_PAYABLE,
+    0 AS ACCOUNT_PAYABLE,
+    0 AS PROVISION_FOR_DOUBTFUL_DEBT,
+    0 AS PROFIT_LOSS_FACTORING_REVENUES,
+    0 AS PROFIT_LOSS_PROCESSING_REVENUES,
+    0 AS PROFIT_LOSS_PAYOUT_REVENUES,
+    0 AS DEFERED_REVENUES,
+    0 AS ADJUSTMENTS_REVENUE,
+    0 AS COGS,
+    0 AS DOUBTFUL_DEBT,
+    0 AS CONNECTED_ACCOUNT,
+    buyer_id AS BUYER,
+    '' AS VENDOR,
+    merchant_name AS MERCHANT,
+    TRANSACTION_AMOUNT AS TRANSACTION_AMOUNT,
+    transaction_public_id AS TRANSACTION_PAYOUT_PUBLIC_ID,
+    is_financed AS IS_TRANSACTION_FINANCED,
+    advance_rate AS ADVANCE_RATE_PERCENTAGE,
+    charge_public_id AS CHARGE_ID,
+    '' AS REFUND_ID,
+    '' AS PAYOUT_ID,
+    EXTERNAL_STRIPE_REF AS EXTERNAL_REF,
+    'Money available in bank' AS SEQUENCE,
+    12 AS SEQUENCE_ORDER,
+    CURRENT_TIMESTAMP AS ROW_UPDATED_AT,
+    'Noa' AS UPDATED_BY,
+    'Insert new sequence to table' AS REASON
+
+from charge_summary
+and is_deleted is null
+and (CHARGE_PAYMENT_METHOD_TYPE in ('check') or gateway_ref='bank')
+
+UNION ALL
+
+select
+    CONCAT('mais_', LEFT(ABS(RANDOM()), 10), RANDSTR(6, RANDOM())) AS RECORD_ID, 
+    current_timestamp AS CREATED_DATE,
+    date_of_payment AS ACCOUNTING_DATE,
+    charge_amount as PHYSICAL_CASH_CHANGE,
+    charge_amount*-1 as IN_TRANSIT,
+    0 as FACTORING_ACCOUNT_RECEIVABLE,
+    0 AS OTHER_ACCOUNT_PAYABLE,
+    0 AS ACCOUNT_PAYABLE,
+    0 AS PROVISION_FOR_DOUBTFUL_DEBT,
+    0 AS PROFIT_LOSS_FACTORING_REVENUES,
+    0 AS PROFIT_LOSS_PROCESSING_REVENUES,
+    0 AS PROFIT_LOSS_PAYOUT_REVENUES,
+    0 AS DEFERED_REVENUES,
+    0 AS ADJUSTMENTS_REVENUE,
+    0 AS COGS,
+    0 AS DOUBTFUL_DEBT,
+    0 AS CONNECTED_ACCOUNT,
+    buyer_id AS BUYER,
+    '' AS VENDOR,
+    merchant_name AS MERCHANT,
+    TRANSACTION_AMOUNT AS TRANSACTION_AMOUNT,
+    transaction_public_id AS TRANSACTION_PAYOUT_PUBLIC_ID,
+    is_financed AS IS_TRANSACTION_FINANCED,
+    advance_rate AS ADVANCE_RATE_PERCENTAGE,
+    charge_public_id AS CHARGE_ID,
+    '' AS REFUND_ID,
+    '' AS PAYOUT_ID,
+    EXTERNAL_STRIPE_REF AS EXTERNAL_REF,
+    'Money available in stripe' AS SEQUENCE,
+    13 AS SEQUENCE_ORDER,
+    CURRENT_TIMESTAMP AS ROW_UPDATED_AT,
+    'Noa' AS UPDATED_BY,
+    'Insert new sequence to table' AS REASON
+
+from charge_summary
+and is_deleted is null
+and gateway_ref='stripe'
+and CHARGE_PAYMENT_METHOD_TYPE  not in ('check','outOfPlatform')
+
+
+UNION ALL
+
+select
+    CONCAT('mais_', LEFT(ABS(RANDOM()), 10), RANDSTR(6, RANDOM())) AS RECORD_ID, 
+    current_timestamp AS CREATED_DATE,
+    date_of_payment  AS ACCOUNTING_DATE,
+    charge_amount as PHYSICAL_CASH_CHANGE,
+    charge_amount*-1 as IN_TRANSIT,
+    0 as FACTORING_ACCOUNT_RECEIVABLE,
+    0 AS OTHER_ACCOUNT_PAYABLE,
+    0 AS ACCOUNT_PAYABLE,
+    0 AS PROVISION_FOR_DOUBTFUL_DEBT,
+    0 AS PROFIT_LOSS_FACTORING_REVENUES,
+    0 AS PROFIT_LOSS_PROCESSING_REVENUES,
+    0 AS PROFIT_LOSS_PAYOUT_REVENUES,
+    0 AS DEFERED_REVENUES,
+    0 AS ADJUSTMENTS_REVENUE,
+    0 AS COGS,
+    0 AS DOUBTFUL_DEBT,
+    0 AS CONNECTED_ACCOUNT,
+    buyer_id AS BUYER,
+    '' AS VENDOR,
+    merchant_name AS MERCHANT,
+    TRANSACTION_AMOUNT AS TRANSACTION_AMOUNT,
+    transaction_public_id AS TRANSACTION_PAYOUT_PUBLIC_ID,
+    is_financed AS IS_TRANSACTION_FINANCED,
+    advance_rate AS ADVANCE_RATE_PERCENTAGE,
+    charge_public_id AS CHARGE_ID,
+    '' AS REFUND_ID,
+    '' AS PAYOUT_ID,
+    EXTERNAL_STRIPE_REF AS EXTERNAL_REF,
+    'Cost - stripe charge fees' AS SEQUENCE,
+    14 AS SEQUENCE_ORDER,
+    CURRENT_TIMESTAMP AS ROW_UPDATED_AT,
+    'Noa' AS UPDATED_BY,
+    'Insert new sequence to table' AS REASON
+
+from charge_summary
+and is_deleted is null
+and gateway_ref='stripe'
+and CHARGE_PAYMENT_METHOD_TYPE  not in ('check','outOfPlatform')
+
+UNION ALL
+
+
+select
+    CONCAT('mbdo_', LEFT(ABS(RANDOM()), 10), RANDSTR(6, RANDOM())) AS RECORD_ID, 
+    current_timestamp AS CREATED_DATE,
+    date_of_payment  AS ACCOUNTING_DATE,
+    0 as PHYSICAL_CASH_CHANGE,
+    0 as IN_TRANSIT,
+    charge_amount*-1 as FACTORING_ACCOUNT_RECEIVABLE,
+    charge_amount*advance_rate as OTHER_ACCOUNT_PAYABLE,
+    charge_amount*(1-advance_rate) as ACCOUNT_PAYABLE,
+    0 AS PROVISION_FOR_DOUBTFUL_DEBT,
+    0 AS PROFIT_LOSS_FACTORING_REVENUES,
+    0 AS PROFIT_LOSS_PROCESSING_REVENUES,
+    0 AS PROFIT_LOSS_PAYOUT_REVENUES,
+    0 AS DEFERED_REVENUES,
+    0 AS ADJUSTMENTS_REVENUE,
+    0 AS COGS,
+    0 AS DOUBTFUL_DEBT,
+    0 AS CONNECTED_ACCOUNT,
+    buyer_id AS BUYER,
+    '' AS VENDOR,
+    merchant_name AS MERCHANT,
+    TRANSACTION_AMOUNT AS TRANSACTION_AMOUNT,
+    transaction_public_id AS TRANSACTION_PAYOUT_PUBLIC_ID,
+    is_financed AS IS_TRANSACTION_FINANCED,
+    advance_rate AS ADVANCE_RATE_PERCENTAGE,
+    charge_public_id AS CHARGE_ID,
+    '' AS REFUND_ID,
+    '' AS PAYOUT_ID,
+    '' AS EXTERNAL_REF,
+    'Merchant balance decreased - outOfPlatform payment' AS SEQUENCE,
+    15 AS SEQUENCE_ORDER,
+    CURRENT_TIMESTAMP AS ROW_UPDATED_AT,
+    'Noa' AS UPDATED_BY,
+    'Insert new sequence to table' AS REASON
+
+from charge_summary
+and is_deleted is null
+and is_financed=TRUE
+and CHARGE_PAYMENT_METHOD_TYPE  ='outOfPlatform'
+
+      
+
